@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 
 # Function to calculate future value of the goal
-def calculate_future_value(goal_value, tenure, inflation_rate=6):
+def calculate_future_value(goal_value, tenure, inflation_rate):
     """
     Calculate the future value of the goal amount considering inflation.
     """
@@ -21,31 +23,34 @@ def calculate_sip(goal_value, tenure, step_up_rate=0):
         sip_amount = goal_value / (monthly_tenure * (1 + step_up_rate / 100))
         return sip_amount
 
-# Placeholder function to fetch mutual funds with 4+ star ratings
+# Function to fetch mutual funds dynamically from Morningstar
 def fetch_mutual_funds(risk_appetite):
     """
-    Fetch mutual funds with 4+ star ratings based on risk appetite.
-    Replace this with actual API calls or web scraping logic.
+    Fetch mutual funds with 4+ star ratings dynamically from Morningstar.
     """
-    # Simulated mutual funds data
-    funds = {
-        "Aggressive": [
-            {"Fund Name": "Axis Growth Opportunities Fund", "Rating": 4.5},
-            {"Fund Name": "Mirae Asset Emerging Bluechip Fund", "Rating": 4.3},
-            {"Fund Name": "SBI Small Cap Fund", "Rating": 4.2},
-        ],
-        "Moderate": [
-            {"Fund Name": "HDFC Balanced Advantage Fund", "Rating": 4.4},
-            {"Fund Name": "ICICI Prudential Equity & Debt Fund", "Rating": 4.1},
-            {"Fund Name": "Kotak Standard Multicap Fund", "Rating": 4.0},
-        ],
-        "Conservative": [
-            {"Fund Name": "ICICI Prudential Regular Savings Fund", "Rating": 4.6},
-            {"Fund Name": "HDFC Short Term Debt Fund", "Rating": 4.3},
-            {"Fund Name": "Axis Treasury Advantage Fund", "Rating": 4.2},
-        ],
-    }
-    return funds.get(risk_appetite, [])
+    url = "https://www.morningstar.com/funds/xray"  # Example URL (adjust based on Morningstar's structure)
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.content, "html.parser")
+
+    # Parse the mutual fund data (this is an example; adjust based on Morningstar's HTML structure)
+    funds = []
+    for fund in soup.find_all("div", class_="fund-row"):  # Adjust class name as per Morningstar's structure
+        name = fund.find("a", class_="fund-name").text.strip()
+        rating = float(fund.find("span", class_="star-rating").text.strip())
+        expense_ratio = float(fund.find("span", class_="expense-ratio").text.strip().replace("%", ""))
+        if rating >= 4:  # Only include funds with 4+ star ratings
+            funds.append({"Fund Name": name, "Rating": rating, "Expense Ratio": expense_ratio})
+    
+    # Filter funds based on risk appetite (example logic)
+    if risk_appetite == "Aggressive":
+        funds = funds[:3]  # Top 3 funds for aggressive investors
+    elif risk_appetite == "Moderate":
+        funds = funds[3:6]  # Next 3 funds for moderate investors
+    elif risk_appetite == "Conservative":
+        funds = funds[6:9]  # Next 3 funds for conservative investors
+
+    return funds
 
 # Streamlit app
 st.title("Mutual Fund SIP Planner")
@@ -53,6 +58,7 @@ st.title("Mutual Fund SIP Planner")
 # User inputs
 goal_value = st.number_input("Enter your Current Goal Value (₹):", min_value=0, step=1000)
 tenure = st.number_input("Enter your Goal Tenure (in years):", min_value=1, step=1)
+inflation_rate = st.number_input("Enter the Rate of Inflation (%):", min_value=0.0, step=0.1)
 risk_appetite = st.selectbox(
     "Select your Risk Appetite:", ["Aggressive", "Moderate", "Conservative"]
 )
@@ -60,14 +66,24 @@ risk_appetite = st.selectbox(
 if st.button("Calculate and Suggest Funds"):
     if goal_value > 0 and tenure > 0:
         # Calculate future value of the goal
-        future_value = calculate_future_value(goal_value, tenure)
+        future_value = calculate_future_value(goal_value, tenure, inflation_rate)
         st.subheader("Future Value of Your Goal:")
-        st.write(f"₹{future_value:,.2f} (considering 6% annual inflation)")
+        st.write(f"₹{future_value:,.2f} (considering {inflation_rate}% annual inflation)")
 
-        # Suggest mutual funds
+        # Fetch mutual funds dynamically
         funds = fetch_mutual_funds(risk_appetite)
-        st.subheader("Suggested Mutual Funds:")
-        st.table(pd.DataFrame(funds))
+        if funds:
+            st.subheader("Suggested Mutual Funds:")
+            for fund in funds:
+                st.write(f"Fund Name: {fund['Fund Name']}")
+                st.write(f"Rating: {fund['Rating']} stars")
+                st.write(f"Expense Ratio: {fund['Expense Ratio']}%")
+                # Calculate investment allocation
+                allocation = future_value / len(funds)
+                st.write(f"Suggested Investment: ₹{allocation:,.2f}")
+                st.write("---")
+        else:
+            st.error("No funds found. Please try again later.")
 
         # Calculate SIP amounts
         no_stepup_sip = calculate_sip(future_value, tenure)
